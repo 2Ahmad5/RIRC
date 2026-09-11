@@ -3,8 +3,11 @@
   "name": "rirc",
   "title": "RIRC",
   "description": "Search and paste GIFs from GIPHY or KLIPY.",
-  "icon": "icon.svg",
-  "author": "2Ahmad5",
+  "icon": "RIRC logo.png",
+  "author": "ahmad_shahzad",
+  "categories": [
+    "Productivity"
+  ],
   "license": "MIT",
   "commands": [
     {
@@ -42,14 +45,19 @@
   ],
   "scripts": {
     "build": "ray build -e dist",
-    "dev": "ray develop"
+    "dev": "ray develop",
+    "lint": "ray lint",
+    "publish": "ray publish"
   },
   "dependencies": {
     "@raycast/api": "^2.2.0"
   },
   "devDependencies": {
+    "@raycast/eslint-config": "^2.2.0",
     "@types/node": "22.19.17",
     "@types/react": "19.0.10",
+    "eslint": "^10.10.0",
+    "prettier": "^3.9.6",
     "typescript": "^6.0.3"
   }
 }

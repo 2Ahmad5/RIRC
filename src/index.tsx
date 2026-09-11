@@ -10,6 +10,7 @@ import {
   getPreferenceValues,
   openExtensionPreferences,
   showToast,
+  Keyboard,
 } from "@raycast/api";
 import { execFile } from "node:child_process";
 import { copyFile, readFile, writeFile } from "node:fs/promises";
@@ -87,7 +88,7 @@ type KlipyMemeResponse = {
 
 export default function Command() {
   const preferences = getPreferenceValues<Preferences.Index>();
-  const [view, setView] = useState<View>("giphy");
+  const [view, setView] = useState<View>("klipy");
   const [query, setQuery] = useState("");
   const [gifs, setGifs] = useState<MediaItem[]>([]);
   const [memes, setMemes] = useState<MediaItem[]>([]);
@@ -95,11 +96,14 @@ export default function Command() {
   const [queryEmbedding, setQueryEmbedding] = useState<number[] | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string>();
   const [isLoading, setIsLoading] = useState(false);
-  const apiKey = view === "giphy" ? preferences.giphyApiKey : preferences.klipyApiKey;
+  const apiKey =
+    view === "giphy" ? preferences.giphyApiKey : preferences.klipyApiKey;
 
   useEffect(() => {
     LocalStorage.getItem<string>(SAVED_GIFS_KEY).then((value) => {
-      const items = value ? (JSON.parse(value) as Array<MediaItem & { gifUrl?: string }>) : [];
+      const items = value
+        ? (JSON.parse(value) as Array<MediaItem & { gifUrl?: string }>)
+        : [];
       setSavedGifs(
         items.map((item) => ({
           ...item,
@@ -126,19 +130,34 @@ export default function Command() {
     const timeout = setTimeout(async () => {
       setIsLoading(true);
       try {
-        const [gifResult, memeResult, embeddingResult] = await Promise.allSettled([
-          fetchGifs(view, apiKey, query, controller.signal),
-          view === "klipy" ? fetchKlipyMemes(apiKey, query, controller.signal) : Promise.resolve([]),
-          query && preferences.jinaApiKey && savedGifs.some((item) => item.embedding)
-            ? createJinaEmbedding(preferences.jinaApiKey, { text: query }, "retrieval.query", controller.signal)
-            : Promise.resolve(null),
-        ]);
+        const [gifResult, memeResult, embeddingResult] =
+          await Promise.allSettled([
+            fetchGifs(view, apiKey, query, controller.signal),
+            view === "klipy"
+              ? fetchKlipyMemes(apiKey, query, controller.signal)
+              : Promise.resolve([]),
+            query &&
+            preferences.jinaApiKey &&
+            savedGifs.some((item) => item.embedding)
+              ? createJinaEmbedding(
+                  preferences.jinaApiKey,
+                  { text: query },
+                  "retrieval.query",
+                  controller.signal,
+                )
+              : Promise.resolve(null),
+          ]);
         if (gifResult.status === "rejected") throw gifResult.reason;
         setGifs(gifResult.value);
         setMemes(memeResult.status === "fulfilled" ? memeResult.value : []);
-        setQueryEmbedding(embeddingResult.status === "fulfilled" ? embeddingResult.value : null);
+        setQueryEmbedding(
+          embeddingResult.status === "fulfilled" ? embeddingResult.value : null,
+        );
         if (memeResult.status === "rejected" && !controller.signal.aborted) {
-          await showToast({ style: Toast.Style.Failure, title: "Could not load KLIPY memes" });
+          await showToast({
+            style: Toast.Style.Failure,
+            title: "Could not load KLIPY memes",
+          });
         }
       } catch (error) {
         if (!controller.signal.aborted) {
@@ -162,13 +181,18 @@ export default function Command() {
 
   const visibleGifs =
     view === "saved"
-      ? savedGifs.filter((gif) => gif.title.toLowerCase().includes(query.toLowerCase()))
+      ? savedGifs.filter((gif) =>
+          gif.title.toLowerCase().includes(query.toLowerCase()),
+        )
       : gifs;
   const matchingSaved =
     view !== "saved" && queryEmbedding
       ? savedGifs
           .filter((item) => item.embedding)
-          .map((item) => ({ item, score: dotProduct(queryEmbedding, item.embedding!) }))
+          .map((item) => ({
+            item,
+            score: dotProduct(queryEmbedding, item.embedding!),
+          }))
           .filter(({ score }) => score >= 0.2)
           .sort((a, b) => b.score - a.score)
           .slice(0, 5)
@@ -177,19 +201,33 @@ export default function Command() {
 
   useEffect(() => {
     const firstMatch = matchingSaved[0];
-    if (firstMatch) setSelectedItemId(`matching-${firstMatch.provider}-${firstMatch.kind}-${firstMatch.id}`);
-  }, [matchingSaved[0]?.id, matchingSaved[0]?.kind, matchingSaved[0]?.provider]);
+    if (firstMatch)
+      setSelectedItemId(
+        `matching-${firstMatch.provider}-${firstMatch.kind}-${firstMatch.id}`,
+      );
+  }, [
+    matchingSaved[0]?.id,
+    matchingSaved[0]?.kind,
+    matchingSaved[0]?.provider,
+  ]);
 
   async function toggleSaved(gif: MediaItem) {
-    const isSaved = savedGifs.some((saved) => saved.id === gif.id && saved.provider === gif.provider);
+    const isSaved = savedGifs.some(
+      (saved) => saved.id === gif.id && saved.provider === gif.provider,
+    );
     let itemToSave = gif;
     if (!isSaved && preferences.jinaApiKey && !gif.embedding) {
-      const toast = await showToast({ style: Toast.Style.Animated, title: "Creating visual embedding" });
+      const toast = await showToast({
+        style: Toast.Style.Animated,
+        title: "Creating visual embedding",
+      });
       try {
         const image = await imageInput(gif.previewUrl, gif.fileExtension);
         itemToSave = {
           ...gif,
-          embedding: await createJinaEmbedding(preferences.jinaApiKey, { image }),
+          embedding: await createJinaEmbedding(preferences.jinaApiKey, {
+            image,
+          }),
         };
         toast.style = Toast.Style.Success;
         toast.title = "Visual embedding created";
@@ -200,7 +238,9 @@ export default function Command() {
       }
     }
     const next = isSaved
-      ? savedGifs.filter((saved) => saved.id !== gif.id || saved.provider !== gif.provider)
+      ? savedGifs.filter(
+          (saved) => saved.id !== gif.id || saved.provider !== gif.provider,
+        )
       : [itemToSave, ...savedGifs];
     setSavedGifs(next);
     await LocalStorage.setItem(SAVED_GIFS_KEY, JSON.stringify(next));
@@ -212,13 +252,18 @@ export default function Command() {
 
   async function copyMedia(item: MediaItem, paste = false) {
     const label = item.kind === "image" ? "image" : "GIF";
-    const toast = await showToast({ style: Toast.Style.Animated, title: `Downloading ${label}` });
+    const toast = await showToast({
+      style: Toast.Style.Animated,
+      title: `Downloading ${label}`,
+    });
     try {
       let file = item.mediaUrl;
       if (item.mediaUrl.startsWith("http")) {
         const response = await fetch(item.mediaUrl);
-        if (!response.ok) throw new Error(`Download returned ${response.status}`);
-        const extension = item.fileExtension ?? (item.kind === "image" ? "png" : "gif");
+        if (!response.ok)
+          throw new Error(`Download returned ${response.status}`);
+        const extension =
+          item.fileExtension ?? (item.kind === "image" ? "png" : "gif");
         file = join(
           environment.supportPath,
           `${item.provider}-${item.id.replace(/[^a-zA-Z0-9_-]/g, "-")}.${extension}`,
@@ -234,29 +279,42 @@ export default function Command() {
       toast.title = paste ? `Pasted ${label}` : `Copied ${label}`;
     } catch (error) {
       toast.style = Toast.Style.Failure;
-      toast.title = paste ? `Could not paste ${label}` : `Could not copy ${label}`;
+      toast.title = paste
+        ? `Could not paste ${label}`
+        : `Could not copy ${label}`;
       toast.message = error instanceof Error ? error.message : String(error);
     }
   }
 
   async function saveClipboardMedia() {
-    const toast = await showToast({ style: Toast.Style.Animated, title: "Importing clipboard media" });
+    const toast = await showToast({
+      style: Toast.Style.Animated,
+      title: "Importing clipboard media",
+    });
     try {
       const clipboard = await Clipboard.read();
       const id = `${Date.now()}`;
       let source = clipboard.file ?? clipboard.text.trim();
-      let pathname = source && source.startsWith("http") ? new URL(source).pathname : source;
+      let pathname =
+        source && source.startsWith("http") ? new URL(source).pathname : source;
       let extension = extname(pathname).slice(1).toLowerCase();
       let file = join(environment.supportPath, `saved-${id}.${extension}`);
       if (!["gif", "png", "jpg", "jpeg", "webp"].includes(extension)) {
         extension = "png";
         file = join(environment.supportPath, `saved-${id}.png`);
-        await execFileAsync("/usr/bin/osascript", ["-l", "JavaScript", "-e", CLIPBOARD_IMAGE_SCRIPT, file]);
+        await execFileAsync("/usr/bin/osascript", [
+          "-l",
+          "JavaScript",
+          "-e",
+          CLIPBOARD_IMAGE_SCRIPT,
+          file,
+        ]);
         source = file;
         pathname = file;
       } else if (source.startsWith("http")) {
         const response = await fetch(source);
-        if (!response.ok) throw new Error(`Download returned ${response.status}`);
+        if (!response.ok)
+          throw new Error(`Download returned ${response.status}`);
         await writeFile(file, Buffer.from(await response.arrayBuffer()));
       } else {
         await copyFile(source, file);
@@ -276,10 +334,9 @@ export default function Command() {
         try {
           item = {
             ...item,
-            embedding: await createJinaEmbedding(
-              preferences.jinaApiKey,
-              { image: await imageInput(file, extension) },
-            ),
+            embedding: await createJinaEmbedding(preferences.jinaApiKey, {
+              image: await imageInput(file, extension),
+            }),
           };
         } catch (error) {
           embeddingError = error;
@@ -289,8 +346,11 @@ export default function Command() {
       setSavedGifs(next);
       await LocalStorage.setItem(SAVED_GIFS_KEY, JSON.stringify(next));
       toast.style = embeddingError ? Toast.Style.Failure : Toast.Style.Success;
-      toast.title = embeddingError ? "Saved without semantic indexing" : "Saved clipboard media";
-      toast.message = embeddingError instanceof Error ? embeddingError.message : undefined;
+      toast.title = embeddingError
+        ? "Saved without semantic indexing"
+        : "Saved clipboard media";
+      toast.message =
+        embeddingError instanceof Error ? embeddingError.message : undefined;
     } catch (error) {
       toast.style = Toast.Style.Failure;
       toast.title = "Could not import media";
@@ -300,7 +360,9 @@ export default function Command() {
 
   function renderItems(items: MediaItem[], section: string) {
     return items.map((item) => {
-      const isSaved = savedGifs.some((saved) => saved.id === item.id && saved.provider === item.provider);
+      const isSaved = savedGifs.some(
+        (saved) => saved.id === item.id && saved.provider === item.provider,
+      );
       const label = item.kind === "image" ? "Image" : "GIF";
       return (
         <Grid.Item
@@ -310,21 +372,34 @@ export default function Command() {
           keywords={[item.title]}
           actions={
             <ActionPanel>
-              <Action title={`Copy ${label}`} icon={Icon.Clipboard} onAction={() => copyMedia(item)} />
+              <Action
+                title={`Copy ${label}`}
+                icon={Icon.Clipboard}
+                onAction={() => copyMedia(item)}
+              />
               <Action
                 title={isSaved ? "Remove from Saved" : `Save ${label}`}
                 icon={isSaved ? Icon.HeartDisabled : Icon.Heart}
-                shortcut={{ modifiers: ["cmd"], key: "s" }}
+                shortcut={Keyboard.Shortcut.Common.Save}
                 onAction={() => toggleSaved(item)}
               />
-              <Action title={`Paste ${label}`} icon={Icon.Message} onAction={() => copyMedia(item, true)} />
+              <Action
+                title={`Paste ${label}`}
+                icon={Icon.Message}
+                onAction={() => copyMedia(item, true)}
+              />
               <Action
                 title="Save Clipboard Media"
                 icon={Icon.Plus}
                 shortcut={{ modifiers: ["cmd"], key: "v" }}
                 onAction={saveClipboardMedia}
               />
-              {item.pageUrl ? <Action.OpenInBrowser title={`Open ${label} Page`} url={item.pageUrl} /> : null}
+              {item.pageUrl ? (
+                <Action.OpenInBrowser
+                  title={`Open ${label} Page`}
+                  url={item.pageUrl}
+                />
+              ) : null}
             </ActionPanel>
           }
         />
@@ -351,9 +426,19 @@ export default function Command() {
           />
         </ActionPanel>
       }
-      searchBarPlaceholder={view === "klipy" ? "Search KLIPY" : view === "giphy" ? "Search GIPHY" : "Search Saved"}
+      searchBarPlaceholder={
+        view === "klipy"
+          ? "Search KLIPY"
+          : view === "giphy"
+            ? "Search GIPHY"
+            : "Search Saved"
+      }
       searchBarAccessory={
-        <Grid.Dropdown tooltip="GIF collection" value={view} onChange={(value) => setView(value as View)}>
+        <Grid.Dropdown
+          tooltip="GIF collection"
+          value={view}
+          onChange={(value) => setView(value as View)}
+        >
           <Grid.Dropdown.Item title="KLIPY" value="klipy" />
           <Grid.Dropdown.Item title="GIPHY" value="giphy" />
           <Grid.Dropdown.Item title="Saved" value="saved" icon={Icon.Heart} />
@@ -367,7 +452,11 @@ export default function Command() {
           description="Add your API key in the extension preferences."
           actions={
             <ActionPanel>
-              <Action title="Open Extension Preferences" icon={Icon.Gear} onAction={openExtensionPreferences} />
+              <Action
+                title="Open Extension Preferences"
+                icon={Icon.Gear}
+                onAction={openExtensionPreferences}
+              />
               <Action
                 title="Save Clipboard Media"
                 icon={Icon.Plus}
@@ -396,13 +485,25 @@ export default function Command() {
       ) : (
         <>
           {matchingSaved.length > 0 ? (
-            <Grid.Section title="Matching Saved">{renderItems(matchingSaved, "matching")}</Grid.Section>
+            <Grid.Section title="Matching Saved">
+              {renderItems(matchingSaved, "matching")}
+            </Grid.Section>
           ) : null}
-          <Grid.Section title={view === "giphy" ? "Powered by GIPHY" : view === "klipy" ? "KLIPY GIFs" : "Saved"}>
+          <Grid.Section
+            title={
+              view === "giphy"
+                ? "Powered by GIPHY"
+                : view === "klipy"
+                  ? "KLIPY GIFs"
+                  : "Saved"
+            }
+          >
             {renderItems(visibleGifs, view)}
           </Grid.Section>
           {view === "klipy" && memes.length > 0 ? (
-            <Grid.Section title="KLIPY Memes">{renderItems(memes, "memes")}</Grid.Section>
+            <Grid.Section title="KLIPY Memes">
+              {renderItems(memes, "memes")}
+            </Grid.Section>
           ) : null}
         </>
       )}
@@ -410,7 +511,12 @@ export default function Command() {
   );
 }
 
-async function fetchGifs(provider: Provider, apiKey: string, query: string, signal: AbortSignal): Promise<MediaItem[]> {
+async function fetchGifs(
+  provider: Provider,
+  apiKey: string,
+  query: string,
+  signal: AbortSignal,
+): Promise<MediaItem[]> {
   if (provider === "giphy") {
     const endpoint = query ? "search" : "trending";
     const params = new URLSearchParams({
@@ -421,7 +527,10 @@ async function fetchGifs(provider: Provider, apiKey: string, query: string, sign
     });
     if (query) params.set("q", query);
 
-    const response = await fetch(`https://api.giphy.com/v1/gifs/${endpoint}?${params}`, { signal });
+    const response = await fetch(
+      `https://api.giphy.com/v1/gifs/${endpoint}?${params}`,
+      { signal },
+    );
     if (!response.ok) throw new Error(`GIPHY returned ${response.status}`);
     const json = (await response.json()) as GiphyResponse;
     return json.data.map((gif) => ({
@@ -445,7 +554,10 @@ async function fetchGifs(provider: Provider, apiKey: string, query: string, sign
   });
   if (query) params.set("q", query);
 
-  const response = await fetch(`https://api.klipy.com/v2/${endpoint}?${params}`, { signal });
+  const response = await fetch(
+    `https://api.klipy.com/v2/${endpoint}?${params}`,
+    { signal },
+  );
   if (!response.ok) throw new Error(`KLIPY returned ${response.status}`);
   const json = (await response.json()) as KlipyResponse;
   return json.results.map((gif) => ({
@@ -460,9 +572,16 @@ async function fetchGifs(provider: Provider, apiKey: string, query: string, sign
   }));
 }
 
-async function fetchKlipyMemes(apiKey: string, query: string, signal: AbortSignal): Promise<MediaItem[]> {
+async function fetchKlipyMemes(
+  apiKey: string,
+  query: string,
+  signal: AbortSignal,
+): Promise<MediaItem[]> {
   const endpoint = query ? "search" : "trending";
-  const params = new URLSearchParams({ per_page: "30", content_filter: "medium" });
+  const params = new URLSearchParams({
+    per_page: "30",
+    content_filter: "medium",
+  });
   if (query) params.set("q", query);
 
   const response = await fetch(
@@ -513,9 +632,13 @@ async function createJinaEmbedding(
   });
   if (!response.ok) {
     const message = await response.text();
-    throw new Error(`Jina returned ${response.status}${message ? `: ${message.slice(0, 120)}` : ""}`);
+    throw new Error(
+      `Jina returned ${response.status}${message ? `: ${message.slice(0, 120)}` : ""}`,
+    );
   }
-  const json = (await response.json()) as { data: Array<{ embedding: number[] }> };
+  const json = (await response.json()) as {
+    data: Array<{ embedding: number[] }>;
+  };
   if (!json.data[0]?.embedding) throw new Error("Jina returned no embedding");
   return json.data[0].embedding;
 }
